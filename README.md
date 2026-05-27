@@ -5,7 +5,9 @@ A macOS menu bar app that monitors your local dev services and lets you start th
 ![Status: works on my machine](https://img.shields.io/badge/status-works%20on%20my%20machine-orange) ![Platform: macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 <p align="center">
-  <img src="docs/screenshots/popover.png" alt="Claudia popover" width="360">
+  <img src="docs/screenshots/popover.png" alt="Claudia popover — all services up" width="320">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/popover-down.png" alt="Claudia popover — Dev Server down with Start button" width="320">
 </p>
 
 ## What it does
@@ -17,6 +19,14 @@ Polls every 5 seconds. Shows the Claude Code icon in the menu bar:
 - **Grey ⚠** — status unknown (just after sleep/wake/launch)
 
 Click the icon for the popover: per-service status, a ▶ Start button on any downed service, a Notifications toggle, Refresh Now, Launch at Login, and Settings.
+
+When something drops (and you didn't tell it to), you get a banner. When it comes back, another banner. You can stop staring at three terminals.
+
+<p align="center">
+  <img src="docs/screenshots/notification-down.png" alt="Down notification banner" width="380">
+  &nbsp;
+  <img src="docs/screenshots/notification-recovery.png" alt="Recovery notification banner" width="380">
+</p>
 
 ## Install
 
