@@ -1,6 +1,6 @@
 # Claudia — macOS Menu Bar Dev Monitor
 
-A menu bar app that monitors three local dev services: Docker, Supabase (`localhost:54321`), and a Next.js dev server (`localhost:3000`). Polls every 5 seconds, shows a colored SF Symbol in the menu bar, sends notifications when services go down unexpectedly, suppresses noise via a Maintenance Mode toggle.
+A menu bar app that monitors a user-configurable list of local services. Default presets cover Docker, Postgres, Supabase, Redis, MySQL, MongoDB, Next.js/Vite/Astro/Storybook/Rails/Django dev servers, Mailpit, LocalStack, and ngrok. Custom services can be defined for anything else.
 
 ---
 
@@ -11,7 +11,7 @@ A menu bar app that monitors three local dev services: Docker, Supabase (`localh
 - **Distribution:** Direct (Developer ID → notarize → staple). **App Sandbox is intentionally OFF.**
 - **Concurrency:** Swift 6 language mode, strict concurrency `complete`. Default actor isolation: `MainActor`.
 - **UI:** AppKit `NSStatusItem` + `NSPopover` hosting SwiftUI via `NSHostingController`, wired through an `AppDelegate` (`@NSApplicationDelegateAdaptor`). Not `MenuBarExtra` — the colored icon needs full `NSImage` control.
-- **Dependencies:** First-party Apple frameworks only. Adding an SPM dependency requires written justification.
+- **Dependencies:** First-party Apple frameworks only.
 
 ---
 
@@ -19,79 +19,89 @@ A menu bar app that monitors three local dev services: Docker, Supabase (`localh
 
 | Rule | Detail |
 |---|---|
-| **Sandbox stays OFF** | Never add `com.apple.security.app-sandbox`. It silently breaks every health check (Process is blocked). Hardened Runtime is on, which is required for notarization and is fine for Process. |
-| **`isTemplate = false`** | The #1 trap. Template mode forces monochrome and discards palette colors. The status icon is intentionally colored — `StatusIcon.image(for:)` sets `isTemplate = false`. Never flip it. |
+| **Sandbox stays OFF** | Never add `com.apple.security.app-sandbox`. It silently breaks every shell check (Process is blocked). Hardened Runtime is on, which is required for notarization and is fine for Process. |
+| **`isTemplate = false`** | Template mode forces monochrome and discards palette colors. The status icon is intentionally colored — `StatusIcon.image(for:)` sets `isTemplate = false`. Never flip it. |
 | **No ad-hoc `Process()`** | Every shell command goes through `runShell` in `ShellRunner.swift`. Zero exceptions. |
 | **No `Timer`** | Polling uses a structured `Task` + `Task.sleep`. Timers stall in menu-tracking / popover-open run-loop modes. |
-| **No `HealthCheck` protocol (yet)** | Intentional for three fixed services. If services grow past ~5 or need shared retry/config, introduce a protocol + array then. |
-| **Aggregate logic in `StatusMonitor`** | `overallStatus` (worst-of-three) lives in the store. The icon consumes it; never recompute. |
-| **Don't add `@unchecked Sendable` to user types** | `ProcessHolder` in `ShellRunner.swift` is the one exception — Foundation's `Process` lacks Sendable annotations and the wrapped APIs (`isRunning`, `terminate`) are documented thread-safe. |
+| **No `@unchecked Sendable` on user types** | The one exception is `ProcessHolder` in `ShellRunner.swift` because Foundation's `Process` lacks Sendable annotations and the wrapped APIs are documented thread-safe. |
+| **Value-type extension properties need `nonisolated`** | Project defaults to MainActor isolation. Pure-computation properties on enums/structs (e.g. `CheckSpec.summary`, `StartSpec.isExecutable`) must be marked `nonisolated` so they're callable from background contexts. |
 
 ---
 
 ## Architecture
 
 ```
-ClaudiaApp.swift          ← @main, NSApplicationDelegateAdaptor, empty Settings scene
-AppDelegate.swift         ← owns StatusItem, Popover, NSHostingController, click-toggle
+ClaudiaApp.swift          ← @main, NSApplicationDelegateAdaptor, Settings scene
+AppDelegate.swift         ← owns StatusItem, Popover, NSHostingController, welcome window
 StatusIconView.swift      ← StatusIcon.image(for:) — pure ServiceStatus → NSImage
-StatusMonitor.swift       ← @MainActor @Observable: state + polling + transition detection
-ServiceCheckers.swift     ← nonisolated check functions (Docker shell, HTTP probes)
-ShellRunner.swift         ← nonisolated runShell() with watchdog timeout
+
+Service.swift             ← Service value type, CheckSpec/StartSpec enums, kind helpers, BinaryResolver
+Presets.swift             ← Preset library (~17 entries) + Presets.defaults() seed
+CheckRunner.swift         ← Dispatches CheckSpec → http/tcp/shell probe (nonisolated)
+ActionRunner.swift        ← Dispatches StartSpec → open/terminal/shell launch (nonisolated)
+ShellRunner.swift         ← runShell() with watchdog timeout
+
+AppSettings.swift         ← @MainActor @Observable: services array, notifications toggle, first-run flag, legacy migration
+StatusMonitor.swift       ← @MainActor @Observable: per-service state dict, TaskGroup-based parallel poll, transition detection
 LifecycleObserver.swift   ← NSWorkspace sleep/wake/user-switch → monitor.pause()/resume()
 NotificationManager.swift ← UNUserNotificationCenter wrapper
-PopoverView.swift         ← SwiftUI popover content
+
+PopoverView.swift         ← Menu bar popover; ForEach over enabled services
+SettingsView.swift        ← TabView (Services + General); list of services with edit/delete/toggle
+PresetPickerSheet.swift   ← "Add service" → pick from preset library (or Custom)
+ServiceEditorSheet.swift  ← Full edit form: name, check type, start action with dynamic fields per type
+WelcomeSheet.swift        ← First-run picker; user selects which presets to seed
 Info.plist                ← LSUIElement=YES, NSUserNotificationUsageDescription
 ```
 
-**Data flow:** poll loop → writes → `StatusMonitor` → SwiftUI reads. UI never mutates monitoring state directly; controls call store methods (`pollNow`, `maintenanceMode` toggle).
+**Data flow:** poll loop → writes → `StatusMonitor.states` → SwiftUI reads. UI never mutates monitoring state directly; controls call store methods (`pollNow`, `notificationsEnabled` toggle, `AppSettings.add/update/delete`).
 
-**Actor isolation:** `StatusMonitor` is `@MainActor`. Shell/HTTP work is `nonisolated` — `async let` parallelism in `poll()` runs the three checks off the main actor; results hop back to main for state updates.
+**Actor isolation:** `StatusMonitor` and `AppSettings` are `@MainActor`. Shell/HTTP/TCP work runs `nonisolated` via `CheckRunner` / `ActionRunner` / `runShell`. `poll()` snapshots service specs on the main actor, kicks off a `TaskGroup` of nonisolated checks, and applies results on main when they return.
 
 ---
 
 ## Polling & Lifecycle
 
 - **Loop:** `Task { while !cancelled { try? await Task.sleep(...); if shouldPoll { await poll() } } }` at ~5s with ±0.5s jitter.
-- **Concurrent checks:** `async let d/s/v` so one slow check doesn't delay the others.
+- **Concurrent checks per cycle:** `withTaskGroup` over enabled services so one slow check doesn't delay others.
 - **Pause/resume:** `LifecycleObserver` translates `NSWorkspace.willSleepNotification` / `didWakeNotification` / fast-user-switch into `monitor.pause()` / `resume()`.
-  - `pause()` sets statuses to `.unknown` (visible) and flips `shouldPoll = false`.
-  - `resume()` sets `suppressNextDownAlert = true`, then triggers an immediate `poll()`. The next cycle is a baseline — UP→DOWN alerts are suppressed once (services may still be spinning up after wake). Recovery alerts always fire.
-- **Transition detection:** per-service previous-state tracked in `@ObservationIgnored` fields. First observation out of `.unknown` is silent baseline. UP→DOWN notifies unless maintenance or suppress-flag set. DOWN→UP always notifies.
+  - `pause()` sets all states to `.unknown` (visible) and flips `shouldPoll = false`.
+  - `resume()` sets `suppressNextDownAlert = true`, then triggers an immediate `poll()`. The next cycle is a baseline — UP→DOWN alerts are suppressed once. Recovery alerts always fire.
+- **Transition detection:** per-service previous-status tracked in `ServiceState.previous`. First observation out of `.unknown` is silent baseline. UP→DOWN notifies unless maintenance or suppress-flag set. DOWN→UP always notifies.
 
 ---
 
-## Adding a New Health Check
+## Adding a New Preset
 
-1. Add an `async -> Bool` function to `ServiceCheckers.swift` mirroring `checkSupabase` (HTTP probe) or `checkDocker` (`runShell`).
-2. Add a `ServiceStatus` field and a `ServiceKind` case in `StatusMonitor.swift`. Include in `overallStatus` and the `async let` cycle in `poll()`.
-3. Add a `ServiceRow` in `PopoverView.swift`.
+1. Add a `ServicePreset` entry to `Presets.all` in `Presets.swift`.
+2. Pick the right `PresetCategory`.
+3. Construct a `Service` in `makeService` with the appropriate `check` and (optionally) `startCommand`.
+4. For shell binaries, use `BinaryResolver.resolveOrFirst("name")` — Homebrew install paths vary by arch.
+5. For services that need a project path (workdir for Terminal commands), set `needsPath: true` — the editor will hint to the user that they need to fill it in.
 
-If a new check forces changes to `runShell`, the polling loop, or `LifecycleObserver`, the abstraction is wrong — fix the shape, not the call sites.
+That's it. The preset appears in the picker, can be added with one click, and is freely editable afterward.
 
 ---
 
-## Service Port Configuration
+## Adding a New Check Type
 
-| Service | Probe |
-|---|---|
-| Docker | `docker info --format '{{.ServerVersion}}'` via resolved binary path (`/opt/homebrew/bin/docker` → `/usr/local/bin/docker` → `/usr/bin/docker`) |
-| Supabase | HTTP GET `http://localhost:54321/health` |
-| Dev Server | HTTP HEAD `http://localhost:3000` |
+If you need a new probe (e.g. `.grpc`, `.websocket`), add a case to `CheckSpec`, handle it in `CheckRunner.run`, and add a case to `CheckKind` + the editor's `checkKind` switch in `ServiceEditorSheet`. Three files, mechanical.
 
-HTTP checks: any `HTTPURLResponse` (regardless of status code) = up. Thrown error = down. 3s timeout.
+---
 
-**PATH note:** menu bar apps launched at login inherit a minimal environment. `docker` is rarely on `PATH`. Always resolve the binary explicitly — never rely on `/bin/sh -c "docker ..."`.
+## Storage
+
+- `claudia.services.v1` — `Data` (JSON-encoded `[Service]`)
+- `claudia.notificationsEnabled` — `Bool`
+- `claudia.firstRunComplete` — `Bool`
+- (Legacy keys from < v0.2.0 are migrated on first launch then removed.)
 
 ---
 
 ## Build & Verify
 
 1. Open in Xcode 16+. Cmd+R to build & run.
-2. Menu bar shows orange `?` (unknown) on first launch, then resolves green ✓ / red ✗ within ~1s.
-3. Click the icon → popover shows three service rows + Maintenance Mode + Launch at Login + Quit.
-4. Stop Docker Desktop → red ✗ in menu bar, notification banner fires ("Docker went down").
-5. Restart Docker → green ✓, recovery notification fires.
-6. Enable Maintenance Mode, stop a service → no down notification. Restart it → recovery notification still fires.
-7. Close laptop lid 5+ minutes, reopen → icon corrects within ~1s, **no false "went down" alert**.
-8. Leave popover open across a 5s tick → status still updates (proves Task loop runs during popover-open).
+2. First launch shows the Welcome sheet (preset checkboxes) — pick a starter set or skip.
+3. Menu bar shows the orange Claude Code icon when all up, dark icon when something's down, grey exclamation when status is unknown.
+4. Settings → Services to add/edit/delete/reorder/disable services.
+5. Click a downed service's ▶ Start button to launch it (Docker.app, Terminal with `npm run dev`, etc.).

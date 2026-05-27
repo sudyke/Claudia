@@ -8,23 +8,31 @@ struct PopoverView: View {
     @Bindable private var settings = AppSettings.shared
     @State private var launchAtLogin: Bool = false
 
-    var body: some View {
-        @Bindable var monitor = monitor
+    private var activeServices: [Service] {
+        settings.services.filter(\.enabled)
+    }
 
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header(monitor: monitor)
+            header
             Divider()
-            serviceRows(monitor: monitor)
+
+            if activeServices.isEmpty {
+                emptyState
+            } else {
+                serviceRows
+            }
+
             Divider()
-            controls(monitor: monitor)
+            controls
             Divider()
             appControls
         }
-        .frame(width: 300)
+        .frame(width: 320)
         .onAppear { syncLaunchAtLoginState() }
     }
 
-    private func header(monitor: StatusMonitor) -> some View {
+    private var header: some View {
         HStack {
             Text("Claudia")
                 .font(.headline)
@@ -39,33 +47,41 @@ struct PopoverView: View {
         .padding(.bottom, 10)
     }
 
-    private func serviceRows(monitor: StatusMonitor) -> some View {
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "tray")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("No services configured")
+                .font(.callout)
+            Button("Add a service…") {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    private var serviceRows: some View {
         VStack(spacing: 8) {
-            ServiceRow(
-                name: "Docker",
-                status: monitor.dockerStatus,
-                startAction: { Task { await runStart(.docker, monitor: monitor) } }
-            )
-            ServiceRow(
-                name: "Supabase",
-                status: monitor.supabaseStatus,
-                startAction: { Task { await runStart(.supabase, monitor: monitor) } }
-            )
-            ServiceRow(
-                name: "Dev Server (\(settings.devServerPort))",
-                status: monitor.devServerStatus,
-                startAction: { Task { await runStart(.devServer, monitor: monitor) } }
-            )
+            ForEach(activeServices) { service in
+                ServiceRow(
+                    service: service,
+                    status: monitor.states[service.id]?.status ?? .unknown,
+                    startAction: { Task { await runStart(for: service) } }
+                )
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
 
-    @ViewBuilder
-    private func controls(monitor: StatusMonitor) -> some View {
-        @Bindable var bindable = monitor
+    private var controls: some View {
         VStack(spacing: 8) {
-            Toggle("Notifications", isOn: $bindable.notificationsEnabled)
+            Toggle("Notifications", isOn: $settings.notificationsEnabled)
                 .toggleStyle(.switch)
                 .help("When on, Claudia sends a banner if a service goes down. Turn off while you're intentionally stopping services. Recovery alerts always fire.")
             Button {
@@ -112,31 +128,19 @@ struct PopoverView: View {
 
     // MARK: - Actions
 
-    private enum StartTarget { case docker, supabase, devServer }
-
-    private func runStart(_ target: StartTarget, monitor: StatusMonitor) async {
-        let ok: Bool
-        switch target {
-        case .docker:
-            ok = await startDocker()
-        case .supabase:
-            if settings.supabaseProjectPath.isEmpty {
-                openSettingsWindow()
-                return
-            }
-            ok = await startSupabase(projectPath: settings.supabaseProjectPath)
-        case .devServer:
-            if settings.devServerProjectPath.isEmpty {
-                openSettingsWindow()
-                return
-            }
-            ok = await startDevServer(
-                projectPath: settings.devServerProjectPath,
-                command: settings.devServerCommand.isEmpty ? "npm run dev" : settings.devServerCommand
-            )
+    private func runStart(for service: Service) async {
+        guard let action = service.startCommand else {
+            // No start action configured → take user to settings to add one.
+            openSettingsWindow()
+            return
         }
-        // Whether the action launched a process or not, poll shortly to reflect new reality.
-        _ = ok
+        if !action.isExecutable {
+            // Action exists but is missing required fields (e.g. empty workdir).
+            openSettingsWindow()
+            return
+        }
+        _ = await ActionRunner.run(action)
+        // Give the service a moment to spin up, then poll.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         monitor.pollNow()
     }
@@ -164,7 +168,7 @@ struct PopoverView: View {
 }
 
 private struct ServiceRow: View {
-    let name: String
+    let service: Service
     let status: ServiceStatus
     let startAction: () -> Void
 
@@ -174,10 +178,12 @@ private struct ServiceRow: View {
                 .foregroundStyle(color)
                 .font(.system(size: 14, weight: .semibold))
                 .frame(width: 18)
-            Text(name)
+            Text(service.name)
                 .font(.body)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer()
-            if status == .down {
+            if status == .down && service.startCommand != nil {
                 Button(action: startAction) {
                     Label("Start", systemImage: "play.fill")
                         .labelStyle(.titleAndIcon)

@@ -1,26 +1,38 @@
 # Claudia
 
-A macOS menu bar app that monitors three local dev services and lets you start them with one click when they're down.
+A macOS menu bar app that monitors your local dev services and lets you start them with one click when they're down. Pick from ~17 built-in presets (Docker, Postgres, Supabase, Redis, MySQL, MongoDB, Next.js, Vite, Astro, Storybook, Rails, Django, Mailpit, LocalStack, ngrok, OrbStack, Colima) or define your own.
 
 ![Status: works on my machine](https://img.shields.io/badge/status-works%20on%20my%20machine-orange)
 
-## What it monitors
+## What it does
 
-| Service | How it's checked |
-|---|---|
-| **Docker** | `docker info` (binary resolved at `/opt/homebrew/bin`, `/usr/local/bin`, or `/usr/bin`) |
-| **Supabase** | `GET http://localhost:54321/health` |
-| **Dev Server** | `HEAD http://localhost:3000` |
+Polls every 5 seconds. Shows the Claude Code icon in the menu bar:
 
-Polls every 5 seconds. Shows an orange Claude Code icon in the menu bar when everything's healthy, dark when something's down, grey exclamation triangle when status is unknown (sleep/wake/launch).
+- **Orange** — all configured services are up
+- **Dark** — at least one is down
+- **Grey ⚠** — status unknown (just after sleep/wake/launch)
+
+Click the icon for the popover: per-service status, a ▶ Start button on any downed service, a Notifications toggle, Refresh Now, Launch at Login, and Settings.
+
+## Check types
+
+- **HTTP** — `GET` or `HEAD` against a URL. Any response = up.
+- **TCP** — open a socket to host:port. Connection accepted = up.
+- **Shell** — run a command. Exit 0 = up. (`docker info`, `orb status`, `colima status`, etc.)
+
+## Start action types
+
+- **Open App** — runs `open -a "<name>"`. For Docker Desktop, OrbStack, etc.
+- **Terminal** — opens Terminal.app and runs `cd <folder> && <command>`. For long-running dev servers — you see the logs.
+- **Shell** — runs a one-shot command. For `brew services start postgresql`, `colima start`, etc.
 
 ## Features
 
-- **One-click start** — when a service is down, click the row to launch it. Docker opens directly; Supabase and your dev server open Terminal with `cd <path> && <cmd>` so you can see logs.
-- **Configurable** — set your Supabase project folder, dev server folder, and start command (default `npm run dev`, change to `pnpm dev`, `bun run dev`, etc.) in Settings.
-- **Smart notifications** — banner alerts when a service goes down unexpectedly. Toggle off ("Notifications" in the popover) while you're intentionally stopping things. Recovery alerts always fire.
+- **17+ preset library** with sensible defaults; one click to add common services
+- **Fully customizable** — name, check type, start action all editable; or build your own from scratch
+- **Smart notifications** — banner alerts when a service goes down unexpectedly. Toggle off while you're intentionally stopping things. Recovery alerts always fire.
 - **Sleep-aware** — pauses polling on lid-close / fast-user-switch, forces an immediate refresh on wake, suppresses false "went down" alerts during the post-wake baseline cycle.
-- **Launch at login** — toggle in the popover (uses `SMAppService`, no deprecated APIs).
+- **Launch at login** — uses `SMAppService`, no deprecated APIs.
 
 ## Install
 

@@ -5,8 +5,10 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var welcomeWindow: NSWindow?
     private var lifecycle: LifecycleObserver?
     private let monitor = StatusMonitor()
+    private let settings = AppSettings.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Belt-and-suspenders with LSUIElement: no Dock, no app switcher.
@@ -30,6 +32,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         lifecycle = LifecycleObserver(monitor: monitor)
         monitor.start()
+
+        // First-launch welcome flow.
+        if !settings.hasCompletedFirstRun {
+            DispatchQueue.main.async { [weak self] in
+                self?.showWelcome()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -48,5 +57,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.becomeKey()
         }
+    }
+
+    private func showWelcome() {
+        // Accessory apps need an explicit window to host a SwiftUI sheet on first launch.
+        let hosting = NSHostingController(rootView: WelcomeSheet())
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "Welcome to Claudia"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        welcomeWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 }
