@@ -22,19 +22,40 @@ Polls every 5 seconds. Shows an orange Claude Code icon in the menu bar when eve
 - **Sleep-aware** — pauses polling on lid-close / fast-user-switch, forces an immediate refresh on wake, suppresses false "went down" alerts during the post-wake baseline cycle.
 - **Launch at login** — toggle in the popover (uses `SMAppService`, no deprecated APIs).
 
-## Build & install
+## Install
+
+### Quick install (no Xcode needed)
+
+Grab the latest `.dmg` from the [Releases page](https://github.com/sudyke/Claudia/releases/latest), open it, and drag **Claudia** into Applications. Then launch it from Spotlight or Launchpad.
+
+**First-launch quirk:** the build is ad-hoc signed (no paid Apple Developer ID), so macOS Gatekeeper will block it the first time. Right-click `Claudia.app` in Finder → **Open** → confirm. After that, double-click works normally.
+
+### Default ports
+
+| Service | Probed at |
+|---|---|
+| Supabase | `http://localhost:54321/health` |
+| Dev Server | `http://localhost:3000` |
+
+Both ports are configurable in **Settings…** (in the popover). Project folders and the dev server command (`npm run dev` by default → `pnpm dev`, `bun run dev`, etc.) live there too.
+
+### Build from source
 
 Requires Xcode 16+ and macOS 14+.
 
 ```bash
-git clone https://github.com/<your-username>/Claudia.git
+git clone https://github.com/sudyke/Claudia.git
 cd Claudia
-./reinstall.sh
+./reinstall.sh        # builds Release, installs to /Applications, launches
 ```
 
-`reinstall.sh` builds Release, copies the app to `/Applications`, and launches it.
-
 To develop, open `Claudia.xcodeproj` in Xcode and Cmd+R.
+
+To cut a new release `.dmg`:
+
+```bash
+./release.sh 0.1.1    # writes dist/Claudia-0.1.1.dmg
+```
 
 ## Architecture
 
