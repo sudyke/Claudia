@@ -11,7 +11,8 @@ struct SettingsView: View {
                     label: "Project folder",
                     binding: $settings.supabaseProjectPath
                 )
-                Text("Claudia will run `supabase start` in this folder when you click the Supabase row while it's down.")
+                portField(label: "Health-check port", binding: $settings.supabasePort)
+                Text("Claudia probes `http://localhost:<port>/health` and runs `supabase start` in the project folder when you click the row while it's down.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -21,17 +22,26 @@ struct SettingsView: View {
                     label: "Project folder",
                     binding: $settings.devServerProjectPath
                 )
+                portField(label: "Port", binding: $settings.devServerPort)
                 LabeledContent("Start command") {
                     TextField("", text: $settings.devServerCommand, prompt: Text("npm run dev"))
                         .textFieldStyle(.roundedBorder)
                 }
-                Text("Claudia will open Terminal and run this command in the project folder.")
+                Text("Claudia probes `http://localhost:<port>` and opens Terminal to run the command in the project folder when you click the row while it's down.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 360)
+        .frame(width: 540, height: 460)
+    }
+
+    private func portField(label: String, binding: Binding<Int>) -> some View {
+        LabeledContent(label) {
+            TextField("", value: binding, format: .number.grouping(.never))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 100)
+        }
     }
 
     private func pathPicker(label: String, binding: Binding<String>) -> some View {

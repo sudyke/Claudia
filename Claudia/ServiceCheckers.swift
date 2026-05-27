@@ -16,12 +16,12 @@ nonisolated func checkDocker() async -> Bool {
     return await runShell(path, ["info", "--format", "{{.ServerVersion}}"], timeout: 3)
 }
 
-nonisolated func checkSupabase() async -> Bool {
-    await httpProbe(urlString: "http://localhost:54321/health", method: "GET", timeout: 3)
+nonisolated func checkSupabase(port: Int) async -> Bool {
+    await httpProbe(urlString: "http://localhost:\(port)/health", method: "GET", timeout: 3)
 }
 
-nonisolated func checkDevServer() async -> Bool {
-    await httpProbe(urlString: "http://localhost:3000", method: "HEAD", timeout: 3)
+nonisolated func checkDevServer(port: Int) async -> Bool {
+    await httpProbe(urlString: "http://localhost:\(port)", method: "HEAD", timeout: 3)
 }
 
 private nonisolated func httpProbe(urlString: String, method: String, timeout: TimeInterval) async -> Bool {

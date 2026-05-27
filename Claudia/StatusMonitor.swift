@@ -92,9 +92,13 @@ final class StatusMonitor {
     }
 
     private func poll() async {
+        // Snapshot port settings on main actor before kicking off background checks.
+        let supabasePort  = AppSettings.shared.supabasePort
+        let devServerPort = AppSettings.shared.devServerPort
+
         async let d = checkDocker()
-        async let s = checkSupabase()
-        async let v = checkDevServer()
+        async let s = checkSupabase(port: supabasePort)
+        async let v = checkDevServer(port: devServerPort)
         let (docker, supa, dev) = await (d, s, v)
 
         apply(.docker,    docker ? .up : .down)

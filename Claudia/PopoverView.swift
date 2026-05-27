@@ -52,7 +52,7 @@ struct PopoverView: View {
                 startAction: { Task { await runStart(.supabase, monitor: monitor) } }
             )
             ServiceRow(
-                name: "Dev Server (3000)",
+                name: "Dev Server (\(settings.devServerPort))",
                 status: monitor.devServerStatus,
                 startAction: { Task { await runStart(.devServer, monitor: monitor) } }
             )
