@@ -24,7 +24,15 @@ Polls every 5 seconds. Shows an orange Claude Code icon in the menu bar when eve
 
 ## Install
 
-### Quick install (no Xcode needed)
+### Homebrew (recommended)
+
+```bash
+brew install --cask sudyke/tap/claudia-monitor
+```
+
+> Cask is named `claudia-monitor` (not `claudia`) because the unqualified `claudia` already resolves to a different cask in Homebrew's main repo.
+
+### Direct download
 
 Grab the latest `.dmg` from the [Releases page](https://github.com/sudyke/Claudia/releases/latest), open it, and drag **Claudia** into Applications. Then launch it from Spotlight or Launchpad.
 
