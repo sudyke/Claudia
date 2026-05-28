@@ -139,7 +139,9 @@ struct PopoverView: View {
             openSettingsWindow()
             return
         }
-        _ = await ActionRunner.run(action)
+        // Snapshot the setting on main before kicking off the nonisolated runner.
+        let inBackground = settings.launchTerminalInBackground
+        _ = await ActionRunner.run(action, terminalInBackground: inBackground)
         // Give the service a moment to spin up, then poll.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         monitor.pollNow()

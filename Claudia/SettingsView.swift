@@ -170,6 +170,12 @@ private struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Launch Terminal in background", isOn: $settings.launchTerminalInBackground)
+                Text("When on, services started via Terminal open minimized in the Dock (yellow icon) instead of stealing focus. Click the Dock icon to expand and see logs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Launch Claudia at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
                         setLaunchAtLogin(newValue)

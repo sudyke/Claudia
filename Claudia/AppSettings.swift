@@ -15,6 +15,9 @@ final class AppSettings {
     var notificationsEnabled: Bool {
         didSet { UserDefaults.standard.set(notificationsEnabled, forKey: Keys.notificationsEnabled) }
     }
+    var launchTerminalInBackground: Bool {
+        didSet { UserDefaults.standard.set(launchTerminalInBackground, forKey: Keys.terminalInBackground) }
+    }
     var hasCompletedFirstRun: Bool {
         didSet { UserDefaults.standard.set(hasCompletedFirstRun, forKey: Keys.firstRunComplete) }
     }
@@ -28,6 +31,9 @@ final class AppSettings {
         } else {
             notificationsEnabled = d.bool(forKey: Keys.notificationsEnabled)
         }
+
+        // Terminal background-launch defaults to off (preserve current behavior).
+        launchTerminalInBackground = d.bool(forKey: Keys.terminalInBackground)
 
         hasCompletedFirstRun = d.bool(forKey: Keys.firstRunComplete)
 
@@ -117,9 +123,10 @@ final class AppSettings {
     }
 
     private enum Keys {
-        static let servicesJSON         = "claudia.services.v1"
-        static let notificationsEnabled = "claudia.notificationsEnabled"
-        static let firstRunComplete     = "claudia.firstRunComplete"
+        static let servicesJSON          = "claudia.services.v1"
+        static let notificationsEnabled  = "claudia.notificationsEnabled"
+        static let terminalInBackground  = "claudia.launchTerminalInBackground"
+        static let firstRunComplete      = "claudia.firstRunComplete"
     }
 
     private enum LegacyKeys {
